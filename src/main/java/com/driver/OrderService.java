@@ -2,6 +2,7 @@ package com.driver;
 
 import java.util.*;
 
+import com.driver.Exceptions.DeliveryPartnerNotFound;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -9,7 +10,7 @@ import org.springframework.stereotype.Service;
 public class OrderService {
 
     @Autowired
-    OrderRepository orderRepository = new OrderRepository();
+    OrderRepository orderRepository;
 
     public void addOrder(Order order){
         orderRepository.saveOrder(order);
@@ -24,6 +25,7 @@ public class OrderService {
     }
 
     public Order getOrderById(String orderId){
+
         return orderRepository.findOrderById(orderId);
     }
 
@@ -32,10 +34,31 @@ public class OrderService {
     }
 
     public Integer getOrderCountByPartnerId(String partnerId){
+        // Checking if the delivery partner with such ID exist in the DB.
+        try{
+            DeliveryPartner deliveryPartner = getPartnerById(partnerId);
+            if(deliveryPartner == null){
+                throw new DeliveryPartnerNotFound(String.format("Delivery partner with ID: %s is not found",partnerId));
+            }
+
+        }
+        catch (DeliveryPartnerNotFound deliveryPartnerNotFound){
+            deliveryPartnerNotFound.getLocalizedMessage();
+        }
         return orderRepository.findOrderCountByPartnerId(partnerId);
     }
 
     public List<String> getOrdersByPartnerId(String partnerId){
+        try{
+            // Checking if the delivery partner with such ID exist in the DB.
+            DeliveryPartner deliveryPartner = getPartnerById(partnerId);
+            if(deliveryPartner == null){
+                throw new DeliveryPartnerNotFound(String.format("Delivery partner with ID: %s is not found",partnerId));
+            }
+        }
+        catch(DeliveryPartnerNotFound deliveryPartnerNotFound){
+            deliveryPartnerNotFound.getLocalizedMessage();
+        }
         return orderRepository.findOrdersByPartnerId(partnerId);
     }
 
@@ -44,11 +67,34 @@ public class OrderService {
     }
 
     public void deletePartner(String partnerId){
-        orderRepository.deletePartner(partnerId);
+        DeliveryPartner partner = getPartnerById(partnerId);
+        if (partner != null) {
+            // Unassign all orders associated with this partner
+            List<String> orders = partner.getOrderList().stream().toList();
+            for (String orderId : orders) {
+                Order order = getOrderById(orderId);
+                if (order != null) {
+                    order.setDeliveryPartner(null);
+                }
+            }
+            // Remove the partner from repository
+            orderRepository.deletePartner(partnerId);
+        }
     }
 
     public void deleteOrder(String orderId){
-        orderRepository.deleteOrder(orderId);
+        Order order = getOrderById(orderId);
+        if (order != null) {
+            // Unassign the partner associated with this order
+            DeliveryPartner partner = order.getDeliveryPartner();
+            if (partner != null) {
+                partner.getOrderList().remove(orderId);
+                partner.setNumberOfOrders(partner.getNumberOfOrders() - 1);
+            }
+            // Remove the order from repository
+            orderRepository.deleteOrder(orderId);
+        }
+//        orderRepository.deleteOrder(orderId);
     }
 
     public Integer getCountOfUnassignedOrders(){
